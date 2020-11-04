@@ -1,0 +1,18 @@
+1. build ros
+
+$catkin_make
+
+2. config system env
+
+$echo "source ~/camport3_ros_sample/devel/setup.bash" >> ~/.bashrc
+$source ~/.bashrc
+
+3. run roscore
+
+4. run rosrun percipio_depth_cam3  percipio_publisher
+
+5. run rosrun rviz rviz
+
+6. Add visualization rviz/Image(By display type)
+
+7. Select Image toptic(/camera/depth or /camera/rgb)
