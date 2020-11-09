@@ -1,9 +1,7 @@
 1. build ros
-
 $catkin_make
 
 2. config system env
-
 $echo "source ~/camport3_ros_sample/devel/setup.bash" >> ~/.bashrc
 $source ~/.bashrc
 
@@ -16,3 +14,20 @@ $source ~/.bashrc
 6. Add visualization rviz/Image(By display type)
 
 7. Select Image toptic(/camera/depth or /camera/rgb)
+
+
+
+1. build ros
+$catkin_make
+
+2. config system env
+$echo "source ~/camport3_ros_sample/devel/setup.bash" >> ~/.bashrc
+$source ~/.bashrc
+
+3.run roslaunch percipio_depth_launch  percipio_depth.launch
+
+4.run rosrun rviz rviz
+
+5.Add visualization rviz/PointCloud(By display type)
+
+6.Select PointCloud Toptic(/cloud)

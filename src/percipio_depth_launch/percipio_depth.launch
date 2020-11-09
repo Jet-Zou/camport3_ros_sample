@@ -1,0 +1,9 @@
+<!-- Entry point for using OpenNI2 devices -->
+<launch>
+  <!-- Hardware depth registration -->
+  <param name = "rgb_do_undistortion" type="bool" value = "false"/>
+  <param name = "rgbd_do_registration" type="bool" value = "false"/>
+  <param name = "map_depth2rgb" type="bool" value = "false"/>
+  
+  <node pkg="percipio_depth_cam3" type="percipio_publisher" name="percipio_publisher"></node>
+</launch>

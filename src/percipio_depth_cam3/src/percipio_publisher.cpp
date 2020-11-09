@@ -24,10 +24,15 @@ static int32_t m_color_height;
 
 static pthread_mutex_t mutex_x=PTHREAD_MUTEX_INITIALIZER;
 
+static TY_CAMERA_CALIB_INFO color_calib; 
 static sensor_msgs::ImagePtr depth_msg, bmp_msg;
 
 static TY_CAMERA_CALIB_INFO depth_calib; 
 static sensor_msgs::PointCloud cloud_msg;
+
+static bool b_depth_registration = false;
+static bool b_rgb_undistortion = false;
+static bool b_map_depth2rgb = false;
 
 sensor_msgs::ImageConstPtr rawToFloatingPointConversion(sensor_msgs::ImageConstPtr raw_image)
 {
@@ -134,6 +139,11 @@ int main(int argc, char** argv)
     signal(SIGINT, Stop); 
     ros::init(argc, argv, "image_publisher");
     ros::NodeHandle nh;
+
+    nh.getParam("rgb_do_undistortion", b_rgb_undistortion);
+    nh.getParam("rgbd_do_registration", b_depth_registration);
+    nh.getParam("map_depth2rgb", b_map_depth2rgb);
+  
     image_transport::ImageTransport it(nh);
     image_transport::Publisher pub = it.advertise("camera/depth", 1);
     image_transport::Publisher pub_rgb = it.advertise("camera/rgb", 1);
@@ -175,6 +185,9 @@ int main(int argc, char** argv)
         
         LOGD("Has RGB camera, open RGB cam");
         ASSERT_OK( TYEnableComponents(hDevice, TY_COMPONENT_RGB_CAM) );
+        
+        TYGetStruct(hDevice, TY_COMPONENT_RGB_CAM, TY_STRUCT_CAM_CALIB_DATA, &color_calib, sizeof(color_calib));
+        
         //create a isp handle to convert raw image(color bayer format) to rgb image
         ASSERT_OK(TYISPCreate(&hColorIspHandle));
         //Init code can be modified in common.hpp
