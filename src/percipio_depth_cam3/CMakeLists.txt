@@ -203,11 +203,14 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
-set(OpenCV_DIR /usr/local/share/OpenCV)
-message(STATUS "version: ${OpenCV_VERSION}")
 find_package(OpenCV REQUIRED)
-include_directories(${OpenCV_INCLUDE_DIRS})
-add_executable(percipio_publisher   src/percipio_publisher.cpp)
-target_link_libraries(percipio_publisher   ${catkin_LIBRARIES})
-target_link_libraries(percipio_publisher -ltycam ${OpenCV_LIBS})
+if (NOT OpenCV_FOUND)
+    message(FATAL_ERROR "OpenCV library not found")
+else()
+    message(STATUS "OpenCV version: ${OpenCV_VERSION}")
+    include_directories(${OpenCV_INCLUDE_DIRS})
+    add_executable(percipio_publisher   src/percipio_publisher.cpp)
+    target_link_libraries(percipio_publisher   ${catkin_LIBRARIES})
+    target_link_libraries(percipio_publisher -ltycam ${OpenCV_LIBS})
+endif()
 

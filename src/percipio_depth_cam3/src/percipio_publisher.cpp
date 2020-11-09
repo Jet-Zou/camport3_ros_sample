@@ -5,7 +5,9 @@
 #include <image_transport/image_transport.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/PointCloud.h>
 #include "../include/common.hpp"
+#include "../include/TYImageProc.h"
 
 static cv::Mat depth_image, color_image;
 static TY_INTERFACE_HANDLE hIface = NULL;
@@ -23,6 +25,9 @@ static int32_t m_color_height;
 static pthread_mutex_t mutex_x=PTHREAD_MUTEX_INITIALIZER;
 
 static sensor_msgs::ImagePtr depth_msg, bmp_msg;
+
+static TY_CAMERA_CALIB_INFO depth_calib; 
+static sensor_msgs::PointCloud cloud_msg;
 
 sensor_msgs::ImageConstPtr rawToFloatingPointConversion(sensor_msgs::ImageConstPtr raw_image)
 {
@@ -57,17 +62,18 @@ sensor_msgs::ImageConstPtr rawToFloatingPointConversion(sensor_msgs::ImageConstP
   return new_image;
 }
 
+static int count = 0;
 void *thread_display(void *arg)
 {
     int m_frame_idx = 0;
     TY_FRAME_DATA frame;
     while(!b_process_exit){
-        int err = TYFetchFrame(hDevice, &frame, -1);
+        int err = TYFetchFrame(hDevice, &frame, 5000);
         if( err == TY_STATUS_OK ) {
-            int fps = get_fps();
-            if (fps > 0){
-                LOGI("fps: %d", fps);
-            }
+            //int fps = get_fps();
+            //if (fps > 0){
+            //    LOGI("fps: %d", fps);
+            //}
 
             cv::Mat depth, irl, irr, color;
             parseFrame(frame, &depth, &irl, &irr, &color, hColorIspHandle);
@@ -76,18 +82,34 @@ void *thread_display(void *arg)
             if(!depth.empty()){
                 memcpy(depth_image.data, depth.data, m_depth_width * m_depth_height * 2);
                 depth_msg = cv_bridge::CvImage(std_msgs::Header(), "mono16", depth_image).toImageMsg();
-                depth_msg->header.frame_id = m_frame_idx;
+                depth_msg->header.frame_id = "map";
                 
+                std::vector<TY_VECT_3F> p3d;
+                p3d.resize(m_depth_width * m_depth_height);
+                TYMapDepthImageToPoint3d(&depth_calib, m_depth_width, m_depth_height, (uint16_t*)depth.data, &p3d[0]);
+                
+                cloud_msg.header.stamp = ros::Time::now();
+                cloud_msg.header.frame_id = "map";
+                cloud_msg.points.resize(m_depth_width * m_depth_height);
+                
+                cloud_msg.channels.resize(1);
+                cloud_msg.channels[0].name = "rgb";
+                cloud_msg.channels[0].values.resize(m_depth_width * m_depth_height);
+                
+                for(unsigned int ii = 0; ii < m_depth_width * m_depth_height; ii++) {
+                    cloud_msg.points[ii].x = p3d[ii].x / 1000.0;
+                    cloud_msg.points[ii].y = p3d[ii].y / 1000.0;
+                    cloud_msg.points[ii].z = p3d[ii].z / 1000.0;
+                    cloud_msg.channels[0].values[ii] = 250;
+                }
             }
-            /*
-            if(!irl.empty()){ cv::imshow("LeftIR", irl); }
-            if(!irr.empty()){ cv::imshow("RightIR", irr); }
-            */
             if(!color.empty()){
                 memcpy(color_image.data, color.data, m_color_width * m_color_height * 3);
                 bmp_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", color_image).toImageMsg();
-                bmp_msg->header.frame_id = m_frame_idx;
+                bmp_msg->header.frame_id = "map";
             }
+            //LOGI("count = %d", count);
+            count++;
             pthread_mutex_unlock(&mutex_x);
             
             m_frame_idx++;
@@ -115,6 +137,7 @@ int main(int argc, char** argv)
     image_transport::ImageTransport it(nh);
     image_transport::Publisher pub = it.advertise("camera/depth", 1);
     image_transport::Publisher pub_rgb = it.advertise("camera/rgb", 1);
+    ros::Publisher cloud_pub       = nh.advertise<sensor_msgs::PointCloud>("cloud", 10000);
  
     int32_t color, ir, depth;
     color = 1;
@@ -186,6 +209,8 @@ int main(int argc, char** argv)
         //the acutal depth (mm)= PixelValue * ScaleUnit 
         float scale_unit = 1.;
         TYGetFloat(hDevice, TY_COMPONENT_DEPTH_CAM, TY_FLOAT_SCALE_UNIT, &scale_unit);
+        
+        TYGetStruct(hDevice, TY_COMPONENT_DEPTH_CAM, TY_STRUCT_CAM_CALIB_DATA, &depth_calib, sizeof(depth_calib));
     }
   
     LOGD("Prepare image buffer");
@@ -225,6 +250,7 @@ int main(int argc, char** argv)
         pthread_mutex_lock(&mutex_x);
         sensor_msgs::ImageConstPtr float_msg = rawToFloatingPointConversion(depth_msg);
         pub.publish(float_msg);
+        cloud_pub.publish(cloud_msg);
         pub_rgb.publish(bmp_msg);
         pthread_mutex_unlock(&mutex_x);
         ros::spinOnce();
