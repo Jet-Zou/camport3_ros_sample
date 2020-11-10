@@ -33,6 +33,8 @@ static sensor_msgs::PointCloud cloud_msg;
 static std::string device_sn = "";
 static bool b_rgb_enable = true;
 static bool b_depth_enable = true;
+static std::string szDepthResolution = "640x480";
+static std::string szColorResolution = "640x480";
 static bool b_depth_registration = false;
 static bool b_rgb_undistortion = false;
 static bool b_map_depth2rgb = false;
@@ -127,7 +129,7 @@ void *thread_display(void *arg)
         }
     }
     
-    LOGD("thread_display exit...");
+    ROS_DEBUG("thread_display exit...");
 }
 
 void Stop(int signo) 
@@ -146,6 +148,10 @@ int main(int argc, char** argv)
     nh.getParam("device_sn", device_sn);
     nh.getParam("depth_output_enable", b_depth_enable);
     nh.getParam("rgb_output_enable", b_rgb_enable);
+    
+    nh.getParam("depth_resolution", szDepthResolution);
+    nh.getParam("rgb_resolution", szColorResolution);
+    
     nh.getParam("rgb_do_undistortion", b_rgb_undistortion);
     nh.getParam("rgbd_do_registration", b_depth_registration);
     nh.getParam("map_depth2rgb", b_map_depth2rgb);
@@ -154,17 +160,12 @@ int main(int argc, char** argv)
     image_transport::Publisher pub = it.advertise("camera/depth", 1);
     image_transport::Publisher pub_rgb = it.advertise("camera/rgb", 1);
     ros::Publisher cloud_pub       = nh.advertise<sensor_msgs::PointCloud>("cloud", 1);
- 
-    int32_t color, ir, depth;
-    color = 1;
-    depth = 1;
-    ir = 0;
   
-    LOGD("Init lib");
+    ROS_DEBUG("Init lib");
     ASSERT_OK( TYInitLib() );
     TY_VERSION_INFO ver;
     ASSERT_OK( TYLibVersion(&ver) );
-    LOGD("     - lib version: %d.%d.%d", ver.major, ver.minor, ver.patch);
+    ROS_DEBUG("     - lib version: %d.%d.%d", ver.major, ver.minor, ver.patch);
 
     std::vector<TY_DEVICE_BASE_INFO> selected;
     ASSERT_OK( selectDevice(TY_INTERFACE_ALL, device_sn, "", 1, selected) );
@@ -177,19 +178,32 @@ int main(int argc, char** argv)
     int32_t allComps;
     ASSERT_OK( TYGetComponentIDs(hDevice, &allComps) );
 
+    int _img_width;
     ///try to enable color camera
     if(allComps & TY_COMPONENT_RGB_CAM  && b_rgb_enable) {
         int32_t image_mode;
         ASSERT_OK(get_default_image_mode(hDevice, TY_COMPONENT_RGB_CAM, image_mode));
-        LOGD("Select color Image Mode: %dx%d", TYImageWidth(image_mode), TYImageHeight(image_mode));
         ASSERT_OK(TYSetEnum(hDevice, TY_COMPONENT_RGB_CAM, TY_ENUM_IMAGE_MODE, image_mode));
+        
+        _img_width = atoi(szColorResolution.data());
+        ROS_DEBUG("RGB Width: %d\n", _img_width);
+        std::vector<TY_ENUM_ENTRY> image_mode_list;
+	    get_feature_enum_list(hDevice, TY_COMPONENT_RGB_CAM, TY_ENUM_IMAGE_MODE, image_mode_list);
+	    for (uint32_t idx = 0; idx < image_mode_list.size(); idx++){
+            TY_ENUM_ENTRY &entry = image_mode_list[idx];
+            if (TYImageWidth(entry.value) == _img_width || TYImageHeight(entry.value) == _img_width){
+                ROS_DEBUG("Select RGB Image Mode: %s\n", entry.description);
+                TYSetEnum(hDevice, TY_COMPONENT_RGB_CAM, TY_ENUM_IMAGE_MODE, entry.value);
+                image_mode = entry.value;
+                break;
+            }
+        }
         
         m_color_width = TYImageWidth(image_mode);
         m_color_height = TYImageHeight(image_mode);
-        
         color_image = cv::Mat::zeros(m_color_height, m_color_width, CV_8UC3);
         
-        LOGD("Has RGB camera, open RGB cam");
+        ROS_DEBUG("Has RGB camera, open RGB cam\n");
         ASSERT_OK( TYEnableComponents(hDevice, TY_COMPONENT_RGB_CAM) );
         
         TYGetStruct(hDevice, TY_COMPONENT_RGB_CAM, TY_STRUCT_CAM_CALIB_DATA, &color_calib, sizeof(color_calib));
@@ -202,60 +216,74 @@ int main(int argc, char** argv)
         //You can  call follow function to show  color isp supported features
     }
 
+    /*
     if (allComps & TY_COMPONENT_IR_CAM_LEFT && ir) {
-        LOGD("Has IR left camera, open IR left cam");
+        ROS_DEBUG("Has IR left camera, open IR left cam");
         ASSERT_OK(TYEnableComponents(hDevice, TY_COMPONENT_IR_CAM_LEFT));
     }
 
     if (allComps & TY_COMPONENT_IR_CAM_RIGHT && ir) {
-        LOGD("Has IR right camera, open IR right cam");
+        ROS_DEBUG("Has IR right camera, open IR right cam");
         ASSERT_OK(TYEnableComponents(hDevice, TY_COMPONENT_IR_CAM_RIGHT));
     }
+    */
     
     if (allComps & TY_COMPONENT_DEPTH_CAM && b_depth_enable) {
         int32_t image_mode;
         ASSERT_OK(get_default_image_mode(hDevice, TY_COMPONENT_DEPTH_CAM, image_mode));
-        LOGD("Select Depth Image Mode: %dx%d", TYImageWidth(image_mode), TYImageHeight(image_mode));
         ASSERT_OK(TYSetEnum(hDevice, TY_COMPONENT_DEPTH_CAM, TY_ENUM_IMAGE_MODE, image_mode));
-        ASSERT_OK(TYEnableComponents(hDevice, TY_COMPONENT_DEPTH_CAM));
+        
+        _img_width = atoi(szDepthResolution.data());
+        ROS_DEBUG("DEPTH Width: %d\n", _img_width);
+        std::vector<TY_ENUM_ENTRY> image_mode_list;
+	    get_feature_enum_list(hDevice, TY_COMPONENT_DEPTH_CAM, TY_ENUM_IMAGE_MODE, image_mode_list);
+	    for (uint32_t idx = 0; idx < image_mode_list.size(); idx++){
+            TY_ENUM_ENTRY &entry = image_mode_list[idx];
+            if (TYImageWidth(entry.value) == _img_width || TYImageHeight(entry.value) == _img_width){
+                ROS_DEBUG("Select Depth Image Mode: %s\n", entry.description);
+                TYSetEnum(hDevice, TY_COMPONENT_DEPTH_CAM, TY_ENUM_IMAGE_MODE, entry.value);
+                image_mode = entry.value;
+                break;
+            }
+        }
         
         m_depth_width = TYImageWidth(image_mode);
         m_depth_height = TYImageHeight(image_mode);
-        
         depth_image = cv::Mat::zeros(m_depth_height, m_depth_width, CV_16U);
+        
+        ASSERT_OK(TYEnableComponents(hDevice, TY_COMPONENT_DEPTH_CAM));
         
         //depth map pixel format is uint16_t ,which default unit is  1 mm
         //the acutal depth (mm)= PixelValue * ScaleUnit 
         float scale_unit = 1.;
         TYGetFloat(hDevice, TY_COMPONENT_DEPTH_CAM, TY_FLOAT_SCALE_UNIT, &scale_unit);
-        
         TYGetStruct(hDevice, TY_COMPONENT_DEPTH_CAM, TY_STRUCT_CAM_CALIB_DATA, &depth_calib, sizeof(depth_calib));
     }
   
-    LOGD("Prepare image buffer");
+    ROS_DEBUG("Prepare image buffer");
     uint32_t frameSize;
     ASSERT_OK( TYGetFrameBufferSize(hDevice, &frameSize) );
-    LOGD("     - Get size of framebuffer, %d", frameSize);
+    ROS_DEBUG("     - Get size of framebuffer, %d", frameSize);
 
-    LOGD("     - Allocate & enqueue buffers");
+    ROS_DEBUG("     - Allocate & enqueue buffers");
     char* frameBuffer[2];
     frameBuffer[0] = new char[frameSize];
     frameBuffer[1] = new char[frameSize];
-    LOGD("     - Enqueue buffer (%p, %d)", frameBuffer[0], frameSize);
+    ROS_DEBUG("     - Enqueue buffer (%p, %d)", frameBuffer[0], frameSize);
     ASSERT_OK( TYEnqueueBuffer(hDevice, frameBuffer[0], frameSize) );
-    LOGD("     - Enqueue buffer (%p, %d)", frameBuffer[1], frameSize);
+    ROS_DEBUG("     - Enqueue buffer (%p, %d)", frameBuffer[1], frameSize);
     ASSERT_OK( TYEnqueueBuffer(hDevice, frameBuffer[1], frameSize) );
     
     bool hasTrigger;
     ASSERT_OK(TYHasFeature(hDevice, TY_COMPONENT_DEVICE, TY_STRUCT_TRIGGER_PARAM, &hasTrigger));
     if (hasTrigger) {
-        LOGD("Disable trigger mode");
+        ROS_DEBUG("Disable trigger mode");
         TY_TRIGGER_PARAM trigger;
         trigger.mode = TY_TRIGGER_MODE_OFF;
         ASSERT_OK(TYSetStruct(hDevice, TY_COMPONENT_DEVICE, TY_STRUCT_TRIGGER_PARAM, &trigger, sizeof(trigger)));
     }
 
-    LOGD("Start capture");
+    ROS_DEBUG("Start capture");
     ASSERT_OK( TYStartCapture(hDevice) );
     
     //TODO
@@ -281,7 +309,7 @@ int main(int argc, char** argv)
     }
     
     b_process_exit = true;
-    LOGD("Main process info:thread_display exit");
+    ROS_DEBUG("Main process info:thread_display exit");
     
     pthread_join(display_id,NULL);
     
@@ -292,6 +320,4 @@ int main(int argc, char** argv)
     ASSERT_OK( TYDeinitLib() );
     delete frameBuffer[0];
     delete frameBuffer[1];
-    LOGD("Main done!");
-    
 }
