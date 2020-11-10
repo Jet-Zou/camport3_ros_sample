@@ -30,6 +30,9 @@ static sensor_msgs::ImagePtr depth_msg, bmp_msg;
 static TY_CAMERA_CALIB_INFO depth_calib; 
 static sensor_msgs::PointCloud cloud_msg;
 
+static std::string device_sn = "";
+static bool b_rgb_enable = true;
+static bool b_depth_enable = true;
 static bool b_depth_registration = false;
 static bool b_rgb_undistortion = false;
 static bool b_map_depth2rgb = false;
@@ -60,7 +63,7 @@ sensor_msgs::ImageConstPtr rawToFloatingPointConversion(sensor_msgs::ImageConstP
       *out_ptr = bad_point;
     } else
     {
-      *out_ptr = static_cast<float>(*in_ptr)/1000.0f;
+      *out_ptr = static_cast<float>(*in_ptr);///1000.0f;
     }
   }
 
@@ -139,7 +142,10 @@ int main(int argc, char** argv)
     signal(SIGINT, Stop); 
     ros::init(argc, argv, "image_publisher");
     ros::NodeHandle nh;
-
+    
+    nh.getParam("device_sn", device_sn);
+    nh.getParam("depth_output_enable", b_depth_enable);
+    nh.getParam("rgb_output_enable", b_rgb_enable);
     nh.getParam("rgb_do_undistortion", b_rgb_undistortion);
     nh.getParam("rgbd_do_registration", b_depth_registration);
     nh.getParam("map_depth2rgb", b_map_depth2rgb);
@@ -147,7 +153,7 @@ int main(int argc, char** argv)
     image_transport::ImageTransport it(nh);
     image_transport::Publisher pub = it.advertise("camera/depth", 1);
     image_transport::Publisher pub_rgb = it.advertise("camera/rgb", 1);
-    ros::Publisher cloud_pub       = nh.advertise<sensor_msgs::PointCloud>("cloud", 10000);
+    ros::Publisher cloud_pub       = nh.advertise<sensor_msgs::PointCloud>("cloud", 1);
  
     int32_t color, ir, depth;
     color = 1;
@@ -161,7 +167,7 @@ int main(int argc, char** argv)
     LOGD("     - lib version: %d.%d.%d", ver.major, ver.minor, ver.patch);
 
     std::vector<TY_DEVICE_BASE_INFO> selected;
-    ASSERT_OK( selectDevice(TY_INTERFACE_ALL, "", "", 1, selected) );
+    ASSERT_OK( selectDevice(TY_INTERFACE_ALL, device_sn, "", 1, selected) );
     ASSERT(selected.size() > 0);
     TY_DEVICE_BASE_INFO& selectedDev = selected[0];
 
@@ -172,7 +178,7 @@ int main(int argc, char** argv)
     ASSERT_OK( TYGetComponentIDs(hDevice, &allComps) );
 
     ///try to enable color camera
-    if(allComps & TY_COMPONENT_RGB_CAM  && color) {
+    if(allComps & TY_COMPONENT_RGB_CAM  && b_rgb_enable) {
         int32_t image_mode;
         ASSERT_OK(get_default_image_mode(hDevice, TY_COMPONENT_RGB_CAM, image_mode));
         LOGD("Select color Image Mode: %dx%d", TYImageWidth(image_mode), TYImageHeight(image_mode));
@@ -206,7 +212,7 @@ int main(int argc, char** argv)
         ASSERT_OK(TYEnableComponents(hDevice, TY_COMPONENT_IR_CAM_RIGHT));
     }
     
-    if (allComps & TY_COMPONENT_DEPTH_CAM && depth) {
+    if (allComps & TY_COMPONENT_DEPTH_CAM && b_depth_enable) {
         int32_t image_mode;
         ASSERT_OK(get_default_image_mode(hDevice, TY_COMPONENT_DEPTH_CAM, image_mode));
         LOGD("Select Depth Image Mode: %dx%d", TYImageWidth(image_mode), TYImageHeight(image_mode));
@@ -261,10 +267,14 @@ int main(int argc, char** argv)
     ros::Rate loop_rate(30);
     while (nh.ok()) {
         pthread_mutex_lock(&mutex_x);
-        sensor_msgs::ImageConstPtr float_msg = rawToFloatingPointConversion(depth_msg);
-        pub.publish(float_msg);
-        cloud_pub.publish(cloud_msg);
-        pub_rgb.publish(bmp_msg);
+        if(b_depth_enable) {
+            sensor_msgs::ImageConstPtr float_msg = rawToFloatingPointConversion(depth_msg);
+            pub.publish(float_msg);
+            cloud_pub.publish(cloud_msg);
+        }
+        
+        if(b_rgb_enable)
+            pub_rgb.publish(bmp_msg);
         pthread_mutex_unlock(&mutex_x);
         ros::spinOnce();
         loop_rate.sleep();
