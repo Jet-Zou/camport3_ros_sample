@@ -6,8 +6,12 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/PointCloud.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/point_cloud_conversion.h>
 #include "../include/common.hpp"
 #include "../include/TYImageProc.h"
+
+//#define POINTCLOUD2_ENABLE
 
 static cv::Mat depth_image, color_image;
 static TY_INTERFACE_HANDLE hIface = NULL;
@@ -29,6 +33,10 @@ static sensor_msgs::ImagePtr depth_msg, bmp_msg;
 
 static TY_CAMERA_CALIB_INFO depth_calib; 
 static sensor_msgs::PointCloud cloud_msg;
+
+#ifdef POINTCLOUD2_ENABLE
+static sensor_msgs::PointCloud2 cloud2_msg;
+#endif
 
 static std::string device_sn = "";
 static bool b_rgb_enable = true;
@@ -102,16 +110,26 @@ void *thread_display(void *arg)
                 cloud_msg.header.frame_id = "map";
                 cloud_msg.points.resize(m_depth_width * m_depth_height);
                 
-                cloud_msg.channels.resize(1);
-                cloud_msg.channels[0].name = "rgb";
-                cloud_msg.channels[0].values.resize(m_depth_width * m_depth_height);
+                //cloud_msg.channels.resize(3);
+                //cloud_msg.channels[0].name = "r";
+                //cloud_msg.channels[0].values.resize(m_depth_width * m_depth_height);
+                //cloud_msg.channels[1].name = "g";
+                //cloud_msg.channels[1].values.resize(m_depth_width * m_depth_height);
+                //cloud_msg.channels[2].name = "b";
+                //cloud_msg.channels[2].values.resize(m_depth_width * m_depth_height);
+                
                 
                 for(unsigned int ii = 0; ii < m_depth_width * m_depth_height; ii++) {
                     cloud_msg.points[ii].x = p3d[ii].x / 1000.0;
                     cloud_msg.points[ii].y = p3d[ii].y / 1000.0;
                     cloud_msg.points[ii].z = p3d[ii].z / 1000.0;
-                    cloud_msg.channels[0].values[ii] = 250;
+                //    cloud_msg.channels[0].values[ii] = 0;
+                //    cloud_msg.channels[1].values[ii] = 0;
+                //    cloud_msg.channels[2].values[ii] = 250;
                 }
+#ifdef POINTCLOUD2_ENABLE                
+                sensor_msgs::convertPointCloudToPointCloud2(cloud_msg, cloud2_msg);
+#endif
             }
             if(!color.empty()){
                 memcpy(color_image.data, color.data, m_color_width * m_color_height * 3);
@@ -159,8 +177,13 @@ int main(int argc, char** argv)
     image_transport::ImageTransport it(nh);
     image_transport::Publisher pub = it.advertise("camera/depth", 1);
     image_transport::Publisher pub_rgb = it.advertise("camera/rgb", 1);
-    ros::Publisher cloud_pub       = nh.advertise<sensor_msgs::PointCloud>("cloud", 1);
-  
+    
+#ifdef POINTCLOUD2_ENABLE          
+    ros::Publisher pcl_pub          = nh.advertise<sensor_msgs::PointCloud2> ("pcl_output", 1);
+#else
+    ros::Publisher cloud_pub        = nh.advertise<sensor_msgs::PointCloud>("cloud", 1);
+#endif
+
     ROS_DEBUG("Init lib");
     ASSERT_OK( TYInitLib() );
     TY_VERSION_INFO ver;
@@ -297,8 +320,12 @@ int main(int argc, char** argv)
         pthread_mutex_lock(&mutex_x);
         if(b_depth_enable) {
             sensor_msgs::ImageConstPtr float_msg = rawToFloatingPointConversion(depth_msg);
-            pub.publish(float_msg);
-            cloud_pub.publish(cloud_msg);
+            pub.publish(float_msg);  
+#ifdef POINTCLOUD2_ENABLE        
+            pcl_pub.publish(cloud2_msg);
+#else
+            cloud_pub.publish(cloud_msg);   
+#endif
         }
         
         if(b_rgb_enable)
