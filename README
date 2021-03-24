@@ -31,3 +31,24 @@ $source ~/.bashrc
 5.Add visualization rviz/PointCloud(By display type)
 
 6.Select PointCloud Toptic(/cloud)
+
+
+多设备同时接入方案
+参考percipio_depth.launch文件，创建多个.launch, 每个.launch文件中”device_sn”配置成不同值，该值为设备序列号：
+
+percipio_depth_1.launch:
+<launch>
+  <group ns="percipio_camera1">
+    <!-- Hardware depth camera param setting -->
+    <param name = "device_sn" type="207000010443"
+    ......
+
+percipio_depth_2.launch:
+<launch>
+  <group ns="percipio_camera2">
+    <!-- Hardware depth camera param setting -->
+    <param name = "device_sn" type="207000010113"
+    ......
+  
+通过运行命令”roslaunch percipio_depth_launch percipio_depth_1.launch”打开序列号为207000010443的设备。
+通过运行命令”roslaunch percipio_depth_launch percipio_depth_2.launch”打开序列号为207000010113的设备。
