@@ -40,14 +40,14 @@ percipio_depth_1.launch:
 <launch>
   <group ns="percipio_camera1">
     <!-- Hardware depth camera param setting -->
-    <param name = "device_sn" type="207000010443"
+	<param name = "device_sn" type="string" value = "207000010443"/>
     ......
 
 percipio_depth_2.launch:
 <launch>
   <group ns="percipio_camera2">
     <!-- Hardware depth camera param setting -->
-    <param name = "device_sn" type="207000010113"
+	<param name = "device_sn" type="string" value = "207000010113"/>
     ......
   
 通过运行命令”roslaunch percipio_depth_launch percipio_depth_1.launch”打开序列号为207000010443的设备。
